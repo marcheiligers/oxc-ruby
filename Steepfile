@@ -5,5 +5,7 @@ target :lib do
 
   check "lib"
 
+  ignore "lib/oxc/jruby.rb"
+
   library "json"
 end

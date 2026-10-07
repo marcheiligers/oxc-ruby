@@ -6,11 +6,15 @@ require_relative "oxc/version"
 require_relative "oxc/errors"
 require_relative "oxc/backend"
 
-begin
-  major, minor, = RUBY_VERSION.split(".")
-  require_relative "oxc/#{major}.#{minor}/oxc"
-rescue LoadError
-  require_relative "oxc/oxc"
+if RUBY_ENGINE == "jruby"
+  require_relative "oxc/jruby"
+else
+  begin
+    major, minor, = RUBY_VERSION.split(".")
+    require_relative "oxc/#{major}.#{minor}/oxc"
+  rescue LoadError
+    require_relative "oxc/oxc"
+  end
 end
 
 require_relative "oxc/options"

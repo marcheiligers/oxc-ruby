@@ -2,6 +2,39 @@
 
 require "bundler/gem_tasks"
 require "rake/testtask"
+require "rubygems/package"
+
+def rust_host_platform
+  cpu = case RbConfig::CONFIG["host_cpu"]
+        when /aarch64|arm64/ then "arm64"
+        when /x86_64|amd64/ then "amd64"
+        else RbConfig::CONFIG["host_cpu"]
+        end
+  os = case RbConfig::CONFIG["host_os"]
+       when /darwin/ then "darwin"
+       when /linux/ then "linux"
+       else raise "oxc does not support JRuby on #{RbConfig::CONFIG["host_os"]}"
+       end
+
+  "#{os}_#{cpu}"
+end
+
+def rust_shared_library_name
+  RbConfig::CONFIG["host_os"].match?(/darwin/) ? "liboxc_ffi.dylib" : "liboxc_ffi.so"
+end
+
+def rust_shared_library_path
+  File.join("rust", "build", rust_host_platform, rust_shared_library_name)
+end
+
+namespace :cargo do
+  desc "Build the Rust shared library for the current host"
+  task :build_shared do
+    sh "cd rust && cargo build --release --locked"
+    FileUtils.mkdir_p(File.dirname(rust_shared_library_path))
+    FileUtils.cp(File.join("rust", "target", "release", rust_shared_library_name), rust_shared_library_path)
+  end
+end
 
 begin
   require "rake/extensiontask"
@@ -105,12 +138,28 @@ begin
     end
   end
 rescue LoadError => e
-  warn "WARNING: Failed to load extension tasks: #{e.message}"
+  warn "WARNING: Failed to load extension tasks: #{e.message}" unless RUBY_ENGINE == "jruby"
 
   desc "Compile task not available (rake-compiler not installed)"
   task :compile do
     abort "rake-compiler is required: #{e.message}\n\nRun: bundle install"
   end
+end
+
+java_gemspec = Gem::Specification.load("oxc.gemspec").dup
+java_gemspec.platform = Gem::Platform.new("java")
+java_gemspec.extensions = []
+java_gemspec.files = java_gemspec.files.reject do |file|
+  file.start_with?("ext/", "rust/")
+end
+java_gemspec.files << rust_shared_library_path
+java_gemspec.add_dependency "ffi", "~> 1.17"
+
+desc "Build the Java gem with the current host shared library"
+task "gem:java" => "cargo:build_shared" do
+  FileUtils.mkdir_p("pkg")
+  gem_file = Gem::Package.build(java_gemspec)
+  FileUtils.mv(gem_file, File.join("pkg", gem_file), force: true)
 end
 
 Rake::TestTask.new(:test) do |t|
@@ -140,5 +189,8 @@ task :steep do
   sh "bundle exec steep check"
 end
 
-task test: :compile
-task default: [:test, :rubocop, :steep]
+task test: :compile unless RUBY_ENGINE == "jruby"
+
+default_tasks = [:test, :rubocop]
+default_tasks << :steep unless RUBY_ENGINE == "jruby"
+task default: default_tasks

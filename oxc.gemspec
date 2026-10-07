@@ -39,5 +39,5 @@ Gem::Specification.new do |spec|
     "rust/src/**/*.rs"
   ]
 
-  spec.extensions = ["ext/oxc/extconf.rb"]
+  spec.extensions = ["ext/oxc/extconf.rb"] unless RUBY_ENGINE == "jruby"
 end
